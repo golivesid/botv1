@@ -1,95 +1,153 @@
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-import logging
-import asyncio
-from datetime import datetime
-from pyrogram.enums import ChatMemberStatus
-from dotenv import load_dotenv
-from os import environ
-import os
 import time
-from status import format_progress_bar
-from video import download_video, upload_video
-from web import keep_alive
+import aria2p
+import requests
+import os
+from pyrogram import Client, filters
+from datetime import datetime
 
-load_dotenv('config.env', override=True)
+# Initialize aria2p API client
+aria2 = aria2p.API(
+    aria2p.Client(
+        host="http://localhost",
+        port=6800,
+        secret=""
+    )
+)
 
-logging.basicConfig(level=logging.INFO)
+# Initialize the Telegram bot client
+api_id = 25797857
+api_hash = "77717127ece56fac64ebea6250db8bb7"
+bot_token = "7249996419:AAHKH3LpiVx-1Q04lfj2trp5R7dKyu6A7Bc"
+app = Client("Spidy", api_id, api_hash, bot_token=bot_token)
 
-api_id = os.environ.get('TELEGRAM_API', '')
-if len(api_id) == 0:
-    logging.error("TELEGRAM_API variable is missing! Exiting now")
-    exit(1)
+up = {}
 
-api_hash = os.environ.get('TELEGRAM_HASH', '')
-if len(api_hash) == 0:
-    logging.error("TELEGRAM_HASH variable is missing! Exiting now")
-    exit(1)
-    
-bot_token = os.environ.get('BOT_TOKEN', '')
-if len(bot_token) == 0:
-    logging.error("BOT_TOKEN variable is missing! Exiting now")
-    exit(1)
-dump_id = os.environ.get('DUMP_CHAT_ID', '')
-if len(dump_id) == 0:
-    logging.error("DUMP_CHAT_ID variable is missing! Exiting now")
-    exit(1)
-else:
-    dump_id = int(dump_id)
 
-fsub_id = os.environ.get('FSUB_ID', '')
-if len(fsub_id) == 0:
-    logging.error("FSUB_ID variable is missing! Exiting now")
-    
-else:
-    fsub_id = int(fsub_id)
+def add_download(api, uri):
+    download = api.add_uris([uri])
+    return download
 
-app = Client("my_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
-
-@app.on_message(filters.command("start"))
-async def start_command(client, message):
-    sticker_message = await message.reply_sticker("CAACAgIAAxkBAAEYonplzwrczhVu3I6HqPBzro3L2JU6YAACvAUAAj-VzAoTSKpoG9FPRjQE")
-    await asyncio.sleep(2)
-    await sticker_message.delete()
-    user_mention = message.from_user.mention
-    reply_message = f"ᴡᴇʟᴄᴏᴍᴇ, {user_mention}.\n\n🌟 ɪ ᴀᴍ ᴀ ᴛᴇʀᴀʙᴏx ᴅᴏᴡɴʟᴏᴀᴅᴇʀ ʙᴏᴛ. sᴇɴᴅ ᴍᴇ ᴀɴʏ ᴛᴇʀᴀʙᴏx ʟɪɴᴋ ɪ ᴡɪʟʟ ᴅᴏᴡɴʟᴏᴀᴅ ᴡɪᴛʜɪɴ ғᴇᴡ sᴇᴄᴏɴᴅs ᴀɴᴅ sᴇɴᴅ ɪᴛ ᴛᴏ ʏᴏᴜ ✨."
-    join_button = InlineKeyboardButton("ᴊᴏɪɴ ❤️🚀", url="https://t.me/jetmirror")
-    developer_button = InlineKeyboardButton("ᴅᴇᴠᴇʟᴏᴘᴇʀ ⚡️", url="https://t.me/hrishikesh2861")
-    reply_markup = InlineKeyboardMarkup([[join_button, developer_button]])
-    await message.reply_text(reply_message, reply_markup=reply_markup)
-
-async def is_user_member(client, user_id):
+def get_status(api, gid):
     try:
-        member = await client.get_chat_member(fsub_id, user_id)
-        logging.info(f"User {user_id} membership status: {member.status}")
-        if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-            return True
-        else:
-            return False
+        download = api.get_download(gid)
+        total_length = download.total_length
+        completed_length = download.completed_length
+        download_speed = download.download_speed
+        file_name = download.name
+        progress = (completed_length / total_length) * 100 if total_length > 0 else 0
+        is_complete = download.is_complete
+
+        return {
+            "gid": download.gid,
+            "status": download.status,
+            "file_name": file_name,
+            "total_length": format_bytes(total_length),
+            "completed_length": format_bytes(completed_length),
+            "download_speed": format_bytes(download_speed),
+            "progress": f"{progress:.2f}%",
+            "is_complete": is_complete
+        }
     except Exception as e:
-        logging.error(f"Error checking membership status for user {user_id}: {e}")
-        return False
+        print(f"Failed to get status for GID {gid}: {e}")
+        raise
 
-@app.on_message(filters.text)
-async def handle_message(client, message: Message):
-    user_id = message.from_user.id
-    user_mention = message.from_user.mention
-    
+async def progress(current, total, client, msg_id, file_name, chat_id):
+    past_time = up[file_name]['time']
+    current_time = datetime.now()
+    time_difference = (current_time - past_time).total_seconds()
+    speed = current - up[file_name]['current']
+    up[file_name]['current'] = current
 
-    terabox_link = message.text.strip()
-    if "terabox" not in terabox_link:
-        await message.reply_text("ᴘʟᴇᴀsᴇ sᴇɴᴅ ᴀ ᴠᴀʟɪᴅ ᴛᴇʀᴀʙᴏx ʟɪɴᴋ.")
-        return
+    status_text = (f"Status : Uploading\nFile Name : {file_name}\nSpeed : {format_bytes(speed / time_difference)}/s\n"
+                   f"Size : {format_bytes(total)}\nProgress : {current * 100 / total:.1f}%")
 
-    reply_msg = await message.reply_text("sᴇɴᴅɪɴɢ ʏᴏᴜ ᴛʜᴇ ᴍᴇᴅɪᴀ...🤤")
+    if time_difference > 3:
+        up[file_name]['time'] = current_time
+        await client.edit_message_text(chat_id, msg_id, status_text)
 
+def remove_download(api, gid):
     try:
-        file_path, thumbnail_path, video_title = await download_video(terabox_link, reply_msg, user_mention, user_id)
-        await upload_video(client, file_path, thumbnail_path, video_title, reply_msg, dump_id, user_mention, user_id, message)
+        api.remove([gid])
+        print(f"Successfully removed download: {gid}")
     except Exception as e:
-        logging.error(f"Error handling message: {e}")
-        await reply_msg.edit_text("ғᴀɪʟᴇᴅ ᴛᴏ ᴘʀᴏᴄᴇss ʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ.\nɪғ ʏᴏᴜʀ ғɪʟᴇ sɪᴢᴇ ɪs ᴍᴏʀᴇ ᴛʜᴀɴ 120ᴍʙ ɪᴛ ᴍɪɢʜᴛ ғᴀɪʟ ᴛᴏ ᴅᴏᴡɴʟᴏᴀᴅ.\nᴛʜɪs ɪs ᴛʜᴇ ᴛᴇʀᴀʙᴏx ɪssᴜᴇ, sᴏᴍᴇ ʟɪɴᴋs ᴀʀᴇ ʙʀᴏᴋᴇɴ, sᴏ ᴅᴏɴᴛ ᴄᴏɴᴛᴀᴄᴛ ʙᴏᴛ's ᴏᴡɴᴇʀ")
+        print(f"Failed to remove download: {e}")
+        raise
 
-if __name__ == "__main__":
-    keep_alive()
-    app.run()
+def add_both(vid, thumb):
+    video = add_download(aria2, vid)
+    thumbnail = add_download(aria2, thumb)
+    print("Added Download:", video.gid)
+    print("Added Download:", thumbnail.gid)
+    return video, thumbnail
+
+def format_bytes(byte_count):
+    suffixes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+    index = 0
+    while byte_count >= 1024 and index < len(suffixes) - 1:
+        byte_count /= 1024
+        index += 1
+    return f"{byte_count:.2f} {suffixes[index]}"
+
+@app.on_message(filters.private & filters.text)
+async def terabox(client, message):
+    if message.text.startswith("https://"):
+        query = message.text
+        url = f"https://teraboxvideodownloader.nepcoderdevs.workers.dev/?url={query}"
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                resolutions = data["response"][0]["resolutions"]
+                fast_download_link = resolutions["Fast Download"]
+                hd_video_link = resolutions["HD Video"]
+                thumbnail_url = data["response"][0]["thumbnail"]
+                video_title = data["response"][0]["title"]
+                reply = await message.reply_text(f"Downloading: {video_title}")
+                video, thumb = add_both(fast_download_link, thumbnail_url)
+                progress_bar = 0
+                retry_error = 1
+                while True:
+                    vstatus = get_status(aria2, video.gid)
+                    tstatus = get_status(aria2, thumb.gid)
+                    status_text = "\n".join([f"{i} : {vstatus[i]}" for i in vstatus])
+                    if progress_bar == 0:
+                          pmsg = await app.send_message(chat_id=message.chat.id, text=status_text)
+                          progress_bar = pmsg.id
+                    else:
+                        await app.edit_message_text(message.chat.id, progress_bar, status_text)
+                    if vstatus['is_complete'] and tstatus['is_complete']:
+                        print("Download complete!")
+                        up[vstatus['file_name']] = {}
+                        current_time = datetime.now()
+                        up[vstatus['file_name']]['current'] = 0
+                        up[vstatus['file_name']]['time'] = current_time
+                        await app.send_video(chat_id=message.chat.id, video=vstatus['file_name'], thumb=tstatus['file_name'],
+                                             progress=progress, progress_args=(app, progress_bar, vstatus['file_name'], message.chat.id))
+                        
+                        await reply.delete()
+                        os.remove(vstatus['file_name'])
+                        os.remove(tstatus['file_name'])
+                        break
+                    elif "error" in vstatus["status"].lower() or "error" in tstatus["status"].lower():
+                        retry_error += 1
+                        print(f"Error detected, restarting downloads, Try {retry_error}...")
+                        remove_download(aria2, video.gid)
+                        remove_download(aria2, thumb.gid)
+                        video, thumb = add_both(fast_download_link, thumbnail_url)
+                    if retry_error > 3:
+                        er = await app.edit_message_text(message.chat.id, progress_bar, "Failed To Fetch the Link")
+                        time.sleep(3)
+                        await er.delete()
+                        await reply.delete()
+                        break
+                    time.sleep(2)
+
+            else:
+                await app.send_message(chat_id=message.chat.id, text="Failed To Fetch the Link")
+        except Exception as e:
+            await app.send_message(chat_id=message.chat.id, text=str(e))
+    else:
+        await app.send_message(chat_id=message.chat.id, text="Send a valid URL")
+
+print("Bot Started")
+app.run()

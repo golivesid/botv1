@@ -14,9 +14,8 @@ jobs:
 
       - name: Install Requirements 
         run: |
-          git clone https://github.com/Hrishi2861/Terabox-Downloader-Bot/
-          cd Terabox-Downloader-Bot && rm config.env && cd .. && cp config.env Terabox-Downloader-Bot/ && cd Terabox-Downloader-Bot 
-          sudo docker build . -t terabox
+          pip install -r requirements.txt
+          sudo apt install aria2
       - name: Run Script
         run: |
-            sudo docker run -p 80:80 -p 8080:8080 terabox
+            bash start.sh

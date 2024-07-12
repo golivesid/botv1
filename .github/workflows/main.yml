@@ -1,0 +1,20 @@
+name: terabox
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+
+      - name: Install Requirements 
+        run: |
+          pip install -r requirements.txt
+      - name: Run Script
+        run: |
+            bash start.sh

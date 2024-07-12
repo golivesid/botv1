@@ -14,7 +14,9 @@ jobs:
 
       - name: Install Requirements 
         run: |
-          pip install -r requirements.txt
+          git clone https://github.com/Hrishi2861/Terabox-Downloader-Bot/
+          cd Terabox-Downloader-Bot && rm config.env && cd .. && cp config.env Terabox-Downloader-Bot/ && cd Terabox-Downloader-Bot 
+          sudo docker build . -t terabox
       - name: Run Script
         run: |
-            bash start.sh
+            sudo docker run -p 80:80 -p 8080:8080 terabox

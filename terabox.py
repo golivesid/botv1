@@ -15,8 +15,8 @@ aria2 = aria2p.API(
 )
 
 # Initialize the Telegram bot client
-api_id = 25797857
-api_hash = "77717127ece56fac64ebea6250db8bb7"
+api_id = 23054736
+api_hash = "d538c2e1a687d414f5c3dce7bf4a743c"
 bot_token = "7107662045:AAGAekejr9l3U0vSy7ze8JEk7oo-cN9xcDw"
 app = Client("Spidy", api_id, api_hash, bot_token=bot_token)
 
